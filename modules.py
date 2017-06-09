@@ -173,13 +173,18 @@ def conv1d_banks(inputs, K=16, is_training=True, scope="conv1d_banks", reuse=Non
     '''
     with tf.variable_scope(scope, reuse=reuse):
         outputs = conv1d(inputs, hp.embed_size//2, 1) # k=1
-        outputs = normalize(outputs, type="bn", is_training=is_training, 
-                            activation_fn=tf.nn.relu)
+        #outputs = normalize(outputs, type="bn", is_training=is_training, 
+        #                    activation_fn=tf.nn.relu)
+        outputs = ins_normalize(outputs, is_training=is_training )
+        outputs = tf.nn.relu(outputs)
         for k in range(2, K+1): # k = 2...K
             with tf.variable_scope("num_{}".format(k)):
-                output = conv1d(inputs, hp.embed_size // 2, k, 1)
-                output = normalize(output, type="bn", is_training=is_training, 
-                            activation_fn=tf.nn.relu)
+                #output = conv1d(inputs, hp.embed_size // 2, k, 1)
+                #output = normalize(output, type="bn", is_training=is_training, 
+                #            activation_fn=tf.nn.relu)
+                output = conv1d(inputs, hp.embed_size//2, k)
+                output = ins_normalize(output, is_training=is_training) 
+                output = tf.nn.relu(output)
                 outputs = tf.concat((outputs, output), -1)
     return outputs # (N, T, Hp.embed_size//2*K)
 
@@ -248,13 +253,38 @@ def prenet(inputs, is_training=True, scope="prenet", reuse=None):
       A 3D tensor of shape [N, T, num_units/2].
     '''
     with tf.variable_scope(scope, reuse=reuse):
-        outputs = tf.layers.dense(inputs, units=hp.embed_size, activation=tf.nn.relu, name="dense1")
+        #outputs = tf.layers.dense(inputs, units=hp.embed_size, activation=tf.nn.relu, name="dense1")
+        outputs = dense(inputs, hp.embed_size, act="relu",variable_scope="dense1")
         outputs = tf.nn.dropout(outputs, keep_prob=.5 if is_training==True else 1., name="dropout1")
-        outputs = tf.layers.dense(outputs, units=hp.embed_size//2, activation=tf.nn.relu, name="dense2")
+        #outputs = tf.layers.dense(outputs, units=hp.embed_size//2, activation=tf.nn.relu, name="dense2")
+        outputs = dense(outputs, hp.embed_size//2,act="relu",variable_scope="dense2")
         outputs = tf.nn.dropout(outputs, keep_prob=.5 if is_training==True else 1., name="dropout2") 
     return outputs # (N, T, num_units/2)
 
-def highwaynet(inputs, num_units=None, scope="highwaynet", reuse=None):
+def dense(inputs, units, bn=True, act=None, is_training=True, variable_scope="dense"):
+    with tf.variable_scope(variable_scope):
+        inputs = tf.contrib.layers.fully_connected(inputs, units)
+        #inputs = batch_normalize(inputs, is_training=is_training)
+        inputs = ins_normalize(inputs, is_training=is_training)
+        if act == "relu":
+            inputs = tf.nn.relu(inputs)
+        elif act == "sigmoid":
+            inputs = tf.nn.sigmoid(inputs)
+    return inputs
+
+def ins_normalize(net, is_training=True):
+    batch, steps, channels = [i.value for i in net.get_shape()]
+    var_shape = [channels]
+    mu, sigma_sq = tf.nn.moments(net, [1], keep_dims=True)
+    shift = tf.Variable(tf.zeros(var_shape))
+    scale = tf.Variable(tf.ones(var_shape))
+    epsilon = 1e-8
+    normalized = (net-mu)/(sigma_sq + epsilon)**(.5)
+    return scale * normalized + shift
+
+
+
+def highwaynet(inputs, is_training=True, num_units=None, scope="highwaynet", reuse=None):
     '''Highway networks, see https://arxiv.org/abs/1505.00387
 
     Args:
@@ -272,8 +302,10 @@ def highwaynet(inputs, num_units=None, scope="highwaynet", reuse=None):
         num_units = inputs.get_shape()[-1]
         
     with tf.variable_scope(scope, reuse=reuse):
-        H = tf.layers.dense(inputs, units=num_units, activation=tf.nn.relu, name="dense1")
-        T = tf.layers.dense(inputs, units=num_units, activation=tf.nn.sigmoid, name="dense2")
+        #H = tf.layers.dense(inputs, units=num_units, activation=tf.nn.relu, name="dense1")
+        #T = tf.layers.dense(inputs, units=num_units, activation=tf.nn.sigmoid, name="dense2")
+        H = dense(inputs, num_units, act="relu",variable_scope="dense1")
+        T = dense(inputs, num_units, act="sigmoid",variable_scope="dense2")
         C = 1. - T
         outputs = H * T + inputs * C
     return outputs

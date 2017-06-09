@@ -1,3 +1,7 @@
+
+[ggsonic:] i use instance normalization instead of batch_norms. I can get clear voices after 100-200 ecpoches. the demo voice you can hear in 10.mp3 file. and the graph is illustrated in graph.png. 
+
+
 # A (Heavily Documented) TensorFlow Implementation of Tacotron: A Fully End-to-End Text-To-Speech Synthesis Model
 
 ## **Major History**
